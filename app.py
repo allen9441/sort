@@ -8,7 +8,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from xrd_backend import (PeakSettings, analyze, display_table, export_excel,
-                         filter_presence, load_excel, parse_q_values)
+                         filter_presence, load_excel, parse_q_values,
+                         presence_correlation)
 
 
 st.set_page_config(page_title='XRD Peak 時間分析', layout='wide')
@@ -148,6 +149,34 @@ else:
     fig.update_layout(xaxis_title='Q', yaxis_title='Intensity', title=spectra.filenames[col])
     st.plotly_chart(fig, width='stretch')
     st.dataframe(result.details[result.details['秒數'] == second], hide_index=True, width='stretch')
+
+st.subheader('Peak 出現的相關矩陣')
+st.caption('以全部時間點的 v=1、x=0 計算 Pearson 相關係數；'
+           '無資料依 peak 配對排除。若某個 peak 始終只有 v 或只有 x，相關係數無法定義。')
+correlation = presence_correlation(result.presence)
+st.dataframe(correlation.style.format('{:.2f}', na_rep='—'), width='stretch')
+st.download_button('下載 Peak 相關矩陣 CSV',
+                   correlation.to_csv().encode('utf-8-sig'),
+                   file_name='xrd_peak_correlation.csv', mime='text/csv')
+labels = [f'{q:g}' for q in correlation.columns]
+values = correlation.to_numpy(dtype=float)
+texts = [[f'{v:.2f}' if np.isfinite(v) else '—' for v in row] for row in values]
+heatmap = go.Figure(go.Heatmap(z=values, x=labels, y=labels,
+                                zmin=-1, zmax=1, colorscale='RdBu',
+                                reversescale=True, colorbar=dict(title='φ')))
+for row, y in enumerate(labels):
+    for col, x in enumerate(labels):
+        value = values[row, col]
+        heatmap.add_annotation(x=x, y=y, text=texts[row][col], showarrow=False,
+                               font=dict(color='white' if np.isfinite(value) and abs(value) > 0.65
+                                         else '#17202a'))
+heatmap.update_layout(xaxis_title='Peak Q', yaxis_title='Peak Q',
+                      yaxis=dict(autorange='reversed'),
+                      height=max(400, 65 * len(labels) + 160))
+st.plotly_chart(heatmap, width='stretch')
+st.download_button('下載 Peak 相關熱圖 HTML',
+                   heatmap.to_html(include_plotlyjs=True, full_html=True).encode('utf-8'),
+                   file_name='xrd_peak_correlation.html', mime='text/html')
 
 with st.expander('判定方法與資料格式'):
     st.markdown('''

@@ -145,6 +145,15 @@ def analyze(spectra: Spectra, q_values: list[float],
     return Analysis(presence, pd.DataFrame(details), processed, all_peaks)
 
 
+def presence_correlation(table: pd.DataFrame) -> pd.DataFrame:
+    """Pearson/phi correlation of peak presence, using pairwise known times.
+
+    A constant or insufficiently observed peak has undefined correlation (NaN).
+    """
+    binary = table.astype('Float64')
+    return binary.corr(method='pearson', min_periods=2)
+
+
 def filter_presence(table: pd.DataFrame, required=(), excluded=(), mode='全部') -> pd.DataFrame:
     """Unknown cells never satisfy either presence or absence conditions."""
     if mode not in ('全部', '任一'):
@@ -170,6 +179,7 @@ def export_excel(result: Analysis, filtered: pd.DataFrame,
         display_table(result.presence).to_excel(writer, sheet_name='全部時間')
         display_table(filtered).to_excel(writer, sheet_name='篩選結果')
         result.details.to_excel(writer, sheet_name='Peak 明細', index=False)
+        presence_correlation(result.presence).to_excel(writer, sheet_name='Peak 相關矩陣')
         pd.DataFrame(list(vars(settings).items()), columns=['參數', '值']).to_excel(
             writer, sheet_name='判定參數', index=False)
         for sheet in writer.book.worksheets:
