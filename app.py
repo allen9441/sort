@@ -60,7 +60,7 @@ with st.sidebar:
         q_text = st.text_area('Q list（逗號或空白分隔）', '0.23, 0.34, 0.56')
         tolerance = st.number_input('Q 容許誤差 ±', min_value=0.0, value=0.01,
                                     step=0.001, format='%.5f')
-        relative = st.number_input('相對突出度（圖譜強度全距的比例）',
+        relative = st.number_input('相對突出度（目標 Q ± 容許誤差內強度全距的比例）',
                                    min_value=0.0, max_value=1.0, value=0.03, step=0.01)
         absolute = st.number_input('絕對突出度下限（強度單位）',
                                    min_value=0.0, value=0.0, step=0.0001, format='%.6f')
@@ -100,7 +100,7 @@ st.caption(f'目前結果：Q 誤差 ±{settings.tolerance:g}；平滑 {settings
            f'雜訊倍數 {settings.noise_multiplier:g}；每段 {used_block_size} 秒。修改參數後請重新分析。')
 outside = [q for q in targets if q < spectra.q[0] or q > spectra.q[-1]]
 if outside:
-    st.warning(f'以下 Q 超出量測範圍，標記為無資料：{outside}')
+    st.warning(f'以下 Q 超出分析範圍，標記為無資料：{outside}')
 
 st.subheader('依 peak 組合篩選時間')
 left, right = st.columns(2)
@@ -205,8 +205,8 @@ with st.expander('判定方法與資料格式'):
     - 秒數 = `(段號 − 1) × 每段秒數 + 段內秒數`；預設每段 150 秒。
     - Q < {MIN_ANALYSIS_Q:g} 的資料不參與計算或作圖。圖表按最低強度平移後，以 log 縱軸顯示。
     - 先選擇性使用 Savitzky–Golay 平滑，再於保留的圖譜找局部極大值。
-    - 突出度門檻取三者最大值：絕對下限、相對比例 × 處理後強度全距、雜訊倍數 × 雜訊估計。
-      雜訊估計使用原始相鄰強度差的 MAD / (0.67448975 × √2)。
+    - 每個目標 Q 的突出度門檻取三者最大值：絕對下限、相對比例 × 該 Q ± 容許誤差內的處理後強度全距、雜訊倍數 × 雜訊估計。
+      雜訊估計使用保留圖譜的原始相鄰強度差 MAD / (0.67448975 × √2)。
     - Peak 位置與目標 Q 的距離 ≤ 容許誤差即標記 v；區間內沒有合格 peak 則為 x。
     - 圖譜兩端點不判定為 peak；「無資料」不符合有 peak 或無 peak 的篩選条件。
     - 自動判定對參數敏感，請用圖譜檢查並依實驗訊號調整；x 代表此設定下未偵測到 peak。

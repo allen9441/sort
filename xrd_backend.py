@@ -122,21 +122,28 @@ def analyze(spectra: Spectra, q_values: list[float],
     if settings.smoothing_window > 1:
         processed = savgol_filter(processed, settings.smoothing_window, 2, axis=0)
     flags = {float(q): [] for q in targets}
+    # The local range for each target is inclusive of both Q tolerance limits.
+    windows = [(int(np.searchsorted(spectra.q, target - settings.tolerance)),
+                int(np.searchsorted(spectra.q, target + settings.tolerance, side='right')))
+               for target in targets]
     details, all_peaks = [], []
     for col, (second, filename) in enumerate(zip(spectra.seconds, spectra.filenames)):
         y = processed[:, col]
         # Robust noise estimate from successive raw intensity differences.
         diff = np.diff(spectra.intensity[:, col])
         noise = np.median(np.abs(diff - np.median(diff))) / (0.67448975 * np.sqrt(2))
-        threshold = max(settings.absolute_prominence,
-                        settings.relative_prominence * np.ptp(y),
-                        settings.noise_multiplier * noise)
-        peaks, props = find_peaks(y, prominence=threshold)
-        all_peaks.append(peaks)
-        for target in targets:
+        base_threshold = max(settings.absolute_prominence, settings.noise_multiplier * noise)
+        peaks, props = find_peaks(y, prominence=base_threshold)
+        qualified = np.zeros(len(peaks), dtype=bool)
+        for target, (start, stop) in zip(targets, windows):
             covered = spectra.q[0] <= target <= spectra.q[-1]
-            matches = np.flatnonzero(np.abs(spectra.q[peaks] - target) <= settings.tolerance)
+            local_span = np.ptp(y[start:stop]) if stop > start else 0.0
+            threshold = max(base_threshold, settings.relative_prominence * local_span)
+            candidates = np.flatnonzero(np.abs(spectra.q[peaks] - target) <= settings.tolerance)
+            matches = candidates[props['prominences'][candidates] >= threshold]
             found = covered and len(matches) > 0
+            if found:
+                qualified[matches] = True
             flags[float(target)].append(bool(found) if covered else pd.NA)
             # Record strongest qualifying peak when the tolerance contains multiple peaks.
             best = matches[np.argmax(props['prominences'][matches])] if found else None
@@ -146,7 +153,9 @@ def analyze(spectra: Spectra, q_values: list[float],
                             'peak Q': spectra.q[peak] if found else np.nan,
                             'peak 強度（處理後）': y[peak] if found else np.nan,
                             '突出度': props['prominences'][best] if found else np.nan,
-                            '突出度門檻': threshold})
+                            '局部強度全距': local_span if covered else np.nan,
+                            '突出度門檻': threshold if covered else np.nan})
+        all_peaks.append(peaks[qualified])
     presence = pd.DataFrame({q: pd.array(v, dtype='boolean') for q, v in flags.items()},
                             index=pd.Index(spectra.seconds, name='秒數'))
     return Analysis(presence, pd.DataFrame(details), processed, all_peaks)
