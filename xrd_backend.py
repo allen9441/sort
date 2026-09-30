@@ -161,13 +161,22 @@ def analyze(spectra: Spectra, q_values: list[float],
     return Analysis(presence, pd.DataFrame(details), processed, all_peaks)
 
 
-def presence_correlation(table: pd.DataFrame) -> pd.DataFrame:
-    """Pearson/phi correlation of peak presence, using pairwise known times.
+def presence_conditional_probability(table: pd.DataFrame) -> pd.DataFrame:
+    """Row A, column B is P(B present | A present) at jointly observed times.
 
-    A constant or insufficiently observed peak has undefined correlation (NaN).
+    Unknown B observations are excluded from the denominator. If A never
+    appears while B is observed, the conditional probability is undefined.
     """
-    binary = table.astype('Float64')
-    return binary.corr(method='pearson', min_periods=2)
+    present = table.fillna(False).to_numpy(dtype=np.int64)
+    known = table.notna().to_numpy(dtype=np.int64)
+    both_present = present.T @ present
+    eligible = present.T @ known
+    probability = np.divide(both_present, eligible,
+                            out=np.full(both_present.shape, np.nan, dtype=float),
+                            where=eligible > 0)
+    return pd.DataFrame(probability,
+                        index=pd.Index(table.columns, name='條件 Peak Q (A)'),
+                        columns=pd.Index(table.columns, name='目標 Peak Q (B)'))
 
 
 def filter_presence(table: pd.DataFrame, required=(), excluded=(), mode='全部') -> pd.DataFrame:
@@ -195,7 +204,7 @@ def export_excel(result: Analysis, filtered: pd.DataFrame,
         display_table(result.presence).to_excel(writer, sheet_name='全部時間')
         display_table(filtered).to_excel(writer, sheet_name='篩選結果')
         result.details.to_excel(writer, sheet_name='Peak 明細', index=False)
-        presence_correlation(result.presence).to_excel(writer, sheet_name='Peak 相關矩陣')
+        presence_conditional_probability(result.presence).to_excel(writer, sheet_name='Peak 條件機率')
         pd.DataFrame(list(vars(settings).items()), columns=['參數', '值']).to_excel(
             writer, sheet_name='判定參數', index=False)
         for sheet in writer.book.worksheets:
