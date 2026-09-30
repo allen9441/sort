@@ -7,19 +7,19 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from xrd_backend import (PeakSettings, analyze, display_table, export_excel,
+from xrd_backend import (MIN_ANALYSIS_Q, PeakSettings, analyze, display_table, export_excel,
                          filter_presence, load_excel, parse_q_values,
                          presence_correlation)
 
 
 st.set_page_config(page_title='XRD Peak 時間分析', layout='wide')
 st.title('XRD Peak 時間分析')
-st.caption('v = 有 peak · x = 未偵測到 peak · 無資料 = 目標 Q 超出量測範圍')
+st.caption(f'僅分析 Q ≥ {MIN_ANALYSIS_Q:g} · v = 有 peak · x = 未偵測到 peak · 無資料 = 目標 Q 超出分析範圍')
 
 
 @st.cache_data(show_spinner=False, max_entries=3)
 def read_spectra(content, sheet, block_size):
-    return load_excel(BytesIO(content), sheet, block_size)
+    return load_excel(BytesIO(content), sheet_name=sheet, block_size=block_size)
 
 
 @st.cache_data(show_spinner=False, max_entries=3)
@@ -132,22 +132,43 @@ else:
     second = st.selectbox('檢視秒數', filtered.index.tolist())
     col = int(np.flatnonzero(spectra.seconds == second)[0])
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=spectra.q, y=spectra.intensity[:, col],
-                             name='原始圖譜', line=dict(color='#94a3b8', width=1)))
-    fig.add_trace(go.Scatter(x=spectra.q, y=result.processed[:, col], name='判定使用圖譜'))
+    raw = spectra.intensity[:, col]
+    processed = result.processed[:, col]
+    floor = min(float(raw.min()), float(processed.min()))
+    span = max(float(raw.max()), float(processed.max())) - floor
+    epsilon = max(span * 1e-6, np.finfo(float).eps * max(abs(floor), 1.0))
+    raw_display = raw - floor + epsilon
+    processed_display = processed - floor + epsilon
+    fig.add_trace(go.Scatter(x=spectra.q, y=raw_display, customdata=raw,
+                             name='原始圖譜', line=dict(color='#94a3b8', width=1),
+                             hovertemplate='Q=%{x:.5g}<br>原始強度=%{customdata:.6g}'
+                                           '<br>圖表強度=%{y:.6g}<extra>%{fullData.name}</extra>'))
+    fig.add_trace(go.Scatter(x=spectra.q, y=processed_display, customdata=processed,
+                             name='判定使用圖譜',
+                             hovertemplate='Q=%{x:.5g}<br>處理後強度=%{customdata:.6g}'
+                                           '<br>圖表強度=%{y:.6g}<extra>%{fullData.name}</extra>'))
     peaks = result.peaks[col]
     matched = np.zeros(len(peaks), dtype=bool)
     for q in targets:
         if spectra.q[0] <= q <= spectra.q[-1]:
             matched |= np.abs(spectra.q[peaks] - q) <= settings.tolerance
-            fig.add_vrect(x0=q-settings.tolerance, x1=q+settings.tolerance,
+            fig.add_vrect(x0=max(spectra.q[0], q-settings.tolerance),
+                          x1=min(spectra.q[-1], q+settings.tolerance),
                           fillcolor='orange', opacity=0.12, line_width=0)
             fig.add_vline(x=q, line_dash='dot', line_color='orange')
-    fig.add_trace(go.Scatter(x=spectra.q[peaks[matched]],
-                             y=result.processed[peaks[matched], col], mode='markers',
-                             marker=dict(color='red', size=10), name='目標附近的 peak'))
-    fig.update_layout(xaxis_title='Q', yaxis_title='Intensity', title=spectra.filenames[col])
+    marked = peaks[matched]
+    fig.add_trace(go.Scatter(x=spectra.q[marked],
+                             y=processed_display[marked], customdata=processed[marked],
+                             mode='markers', marker=dict(color='red', size=10),
+                             name='目標附近的 peak',
+                             hovertemplate='Q=%{x:.5g}<br>處理後強度=%{customdata:.6g}'
+                                           '<br>圖表強度=%{y:.6g}<extra>%{fullData.name}</extra>'))
+    fig.update_layout(xaxis_title='Q', yaxis_title='平移後強度 (log)',
+                      yaxis_type='log', title=spectra.filenames[col])
+    fig.update_xaxes(range=[float(spectra.q[0]), float(spectra.q[-1])])
     st.plotly_chart(fig, width='stretch')
+    st.caption(f'本張圖的顯示強度 = 原強度 − 最低強度（{floor:.6g}）+ {epsilon:.3g}；'
+               '原始與處理後曲線共用此基準，峰值判定使用未平移的強度。')
     st.dataframe(result.details[result.details['秒數'] == second], hide_index=True, width='stretch')
 
 st.subheader('Peak 出現的相關矩陣')
@@ -179,10 +200,11 @@ st.download_button('下載 Peak 相關熱圖 HTML',
                    file_name='xrd_peak_correlation.html', mime='text/html')
 
 with st.expander('判定方法與資料格式'):
-    st.markdown('''
+    st.markdown(f'''
     - Excel 第一列為欄名：`Q, 樣品_01_0.dat, 樣品_01_1.dat, …`，各欄為對應強度。
     - 秒數 = `(段號 − 1) × 每段秒數 + 段內秒數`；預設每段 150 秒。
-    - 先選擇性使用 Savitzky–Golay 平滑，再於整條圖譜找局部極大值。
+    - Q < {MIN_ANALYSIS_Q:g} 的資料不參與計算或作圖。圖表按最低強度平移後，以 log 縱軸顯示。
+    - 先選擇性使用 Savitzky–Golay 平滑，再於保留的圖譜找局部極大值。
     - 突出度門檻取三者最大值：絕對下限、相對比例 × 處理後強度全距、雜訊倍數 × 雜訊估計。
       雜訊估計使用原始相鄰強度差的 MAD / (0.67448975 × √2)。
     - Peak 位置與目標 Q 的距離 ≤ 容許誤差即標記 v；區間內沒有合格 peak 則為 x。

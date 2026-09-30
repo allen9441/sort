@@ -9,6 +9,9 @@ import pandas as pd
 from scipy.signal import find_peaks, savgol_filter
 
 
+MIN_ANALYSIS_Q = 0.01
+
+
 @dataclass
 class Spectra:
     q: np.ndarray
@@ -86,13 +89,17 @@ def load_excel(source: str | Path | BytesIO, sheet_name: str | int = 0,
     seconds = np.array([seconds_from_filename(c, block_size) for c in filenames])
     if len(np.unique(seconds)) != len(seconds):
         raise ValueError('多個圖譜對應相同秒數；請將不同樣品／量測系列分開分析。')
-    numeric = frame[[q_column, *columns]].apply(pd.to_numeric, errors='coerce')
+    q_values = pd.to_numeric(frame[q_column], errors='coerce').to_numpy(dtype=float)
+    if not np.isfinite(q_values).all() or np.any(q_values < 0):
+        raise ValueError('Q 必須為有限的非負數。')
+    numeric = frame.loc[q_values >= MIN_ANALYSIS_Q, [q_column, *columns]].apply(
+        pd.to_numeric, errors='coerce')
     values = numeric.to_numpy(dtype=float)
     if not np.isfinite(values).all():
         row, col = np.argwhere(~np.isfinite(values))[0]
-        raise ValueError(f'資料含空值或非有限數字：欄 {numeric.columns[col]}，資料列 {row + 1}。')
+        raise ValueError(f'資料含空值或非有限數字：欄 {numeric.columns[col]}，Excel 列 {numeric.index[row] + 2}。')
     if len(values) < 3:
-        raise ValueError('每條圖譜至少需要 3 個 Q 點。')
+        raise ValueError(f'Q ≥ {MIN_ANALYSIS_Q:g} 的區域每條圖譜至少需要 3 個 Q 點。')
     q_order = np.argsort(values[:, 0])
     q = values[q_order, 0]
     if np.any(q < 0) or np.any(np.diff(q) <= 0):
