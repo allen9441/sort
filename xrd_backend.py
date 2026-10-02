@@ -161,21 +161,15 @@ def analyze(spectra: Spectra, q_values: list[float],
     return Analysis(presence, pd.DataFrame(details), processed, all_peaks)
 
 
-def presence_conditional_probability(table: pd.DataFrame) -> pd.DataFrame:
-    """Row A, column B is P(B present | A present) at jointly observed times.
+def presence_counts(table: pd.DataFrame) -> pd.DataFrame:
+    """Count joint peak appearances; the diagonal counts each peak itself.
 
-    Unknown B observations are excluded from the denominator. If A never
-    appears while B is observed, the conditional probability is undefined.
+    Unknown observations do not contribute to any appearance count.
     """
     present = table.fillna(False).to_numpy(dtype=np.int64)
-    known = table.notna().to_numpy(dtype=np.int64)
     both_present = present.T @ present
-    eligible = present.T @ known
-    probability = np.divide(both_present, eligible,
-                            out=np.full(both_present.shape, np.nan, dtype=float),
-                            where=eligible > 0)
-    return pd.DataFrame(probability,
-                        index=pd.Index(table.columns, name='條件 Peak Q (A)'),
+    return pd.DataFrame(both_present,
+                        index=pd.Index(table.columns, name='目標 Peak Q (A)'),
                         columns=pd.Index(table.columns, name='目標 Peak Q (B)'))
 
 
@@ -204,7 +198,7 @@ def export_excel(result: Analysis, filtered: pd.DataFrame,
         display_table(result.presence).to_excel(writer, sheet_name='全部時間')
         display_table(filtered).to_excel(writer, sheet_name='篩選結果')
         result.details.to_excel(writer, sheet_name='Peak 明細', index=False)
-        presence_conditional_probability(result.presence).to_excel(writer, sheet_name='Peak 條件機率')
+        presence_counts(result.presence).to_excel(writer, sheet_name='Peak 出現次數')
         pd.DataFrame(list(vars(settings).items()), columns=['參數', '值']).to_excel(
             writer, sheet_name='判定參數', index=False)
         for sheet in writer.book.worksheets:
