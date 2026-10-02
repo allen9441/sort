@@ -19,6 +19,7 @@ st.caption(f'僅分析 Q ≥ {MIN_ANALYSIS_Q:g} · v = 有 peak · x = 未偵測
 
 @st.cache_data(show_spinner=False, max_entries=3)
 def read_spectra(content, sheet, block_size):
+    """Load spectra with filename time indices converted to seconds by ×3."""
     return load_excel(BytesIO(content), sheet_name=sheet, block_size=block_size)
 
 
@@ -66,7 +67,8 @@ with st.sidebar:
                                    min_value=0.0, value=0.0, step=0.0001, format='%.6f')
         noise = st.number_input('雜訊倍數下限', min_value=0.0, value=5.0, step=0.5)
         smoothing = st.selectbox('平滑視窗（點數；1 = 不平滑）', [1, 3, 5, 7, 9, 11, 15, 21], index=2)
-        block_size = st.number_input('每段秒數', min_value=1, value=150, step=1)
+        block_size = st.number_input('每段秒數', min_value=1, value=150, step=1,
+                                    help='秒數 = 3 × [(段號 − 1) × 每段秒數 + 段內秒數]；150 對應每段 450 秒。')
         submitted = st.form_submit_button('開始分析', type='primary')
 
 # Changing the source invalidates old results. Form settings apply only on submit.
