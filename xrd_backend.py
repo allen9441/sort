@@ -70,7 +70,7 @@ def seconds_from_filename(filename: str, block_size: int = 150) -> int:
     block, offset = map(int, match.groups())
     if block < 1 or not 0 <= offset < block_size:
         raise ValueError(f'檔名段號或段內秒數超出範圍：{filename}')
-    return (block - 1) * block_size + offset
+    return 3 * ((block - 1) * block_size + offset)
 
 
 def load_excel(source: str | Path | BytesIO, sheet_name: str | int = 0,

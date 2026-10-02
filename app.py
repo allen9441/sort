@@ -97,7 +97,7 @@ st.write(f'資料：{label} / {sheet}｜{len(spectra.seconds):,} 個時間點｜
          f'Q 範圍：{spectra.q[0]:.6g}–{spectra.q[-1]:.6g}')
 st.caption(f'目前結果：Q 誤差 ±{settings.tolerance:g}；平滑 {settings.smoothing_window} 點；'
            f'相對突出度 {settings.relative_prominence:g}；絕對突出度 {settings.absolute_prominence:g}；'
-           f'雜訊倍數 {settings.noise_multiplier:g}；每段 {used_block_size} 秒。修改參數後請重新分析。')
+           f'雜訊倍數 {settings.noise_multiplier:g}；每段秒數參數 {used_block_size}，換算秒數乘以 3。修改參數後請重新分析。')
 outside = [q for q in targets if q < spectra.q[0] or q > spectra.q[-1]]
 if outside:
     st.warning(f'以下 Q 超出分析範圍，標記為無資料：{outside}')
@@ -203,7 +203,7 @@ st.download_button('下載 Peak 出現次數熱圖 HTML',
 with st.expander('判定方法與資料格式'):
     st.markdown(f'''
     - Excel 第一列為欄名：`Q, 樣品_01_0.dat, 樣品_01_1.dat, …`，各欄為對應強度。
-    - 秒數 = `(段號 − 1) × 每段秒數 + 段內秒數`；預設每段 150 秒。
+    - 秒數 = `3 × [(段號 − 1) × 每段秒數 + 段內秒數]`；每段秒數參數預設為 150，換算後每段 450 秒。
     - Q < {MIN_ANALYSIS_Q:g} 的資料不參與計算或作圖。圖表按最低強度平移後，以 log 縱軸顯示。
     - 先選擇性使用 Savitzky–Golay 平滑，再於保留的圖譜找局部極大值。
     - 每個目標 Q 的突出度門檻取三者最大值：絕對下限、相對比例 × 該 Q ± 容許誤差內的處理後強度全距、雜訊倍數 × 雜訊估計。
